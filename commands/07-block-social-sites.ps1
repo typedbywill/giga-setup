@@ -1,89 +1,120 @@
 # ============================================================
 # Script: 07-block-social-sites.ps1
-# Descrição: Bloqueia WhatsApp, Facebook e Instagram via hosts file
-# Idempotente: Verifica se já está bloqueado antes de adicionar
+# Descrição: Bloqueia WhatsApp, Facebook e Instagram via Firewall
+#            Aplica APENAS para o usuário "Usuário", não afeta Admin
+# Idempotente: Verifica se regras já existem antes de criar
 # ============================================================
 
 $ErrorActionPreference = "Stop"
 
+$targetUser = "Usuário"
+$rulePrefix = "GIGA-Block"
+
 # Sites a bloquear (domínios principais)
 $sitesToBlock = @(
-    "whatsapp.com",
-    "www.whatsapp.com",
-    "web.whatsapp.com",
-    "api.whatsapp.com",
-    "facebook.com",
-    "www.facebook.com",
-    "m.facebook.com",
-    "static.facebook.com",
-    "instagram.com",
-    "www.instagram.com",
-    "i.instagram.com",
-    "static.instagram.com"
+    @{ Name = "WhatsApp"; Domains = @("whatsapp.com", "www.whatsapp.com", "web.whatsapp.com", "api.whatsapp.com", "whatsapp.net", "*.whatsapp.net") },
+    @{ Name = "Facebook"; Domains = @("facebook.com", "www.facebook.com", "m.facebook.com", "static.facebook.com", "*.facebook.com", "fbcdn.net", "*.fbcdn.net") },
+    @{ Name = "Instagram"; Domains = @("instagram.com", "www.instagram.com", "i.instagram.com", "static.instagram.com", "*.instagram.com", "*.cdninstagram.com") }
 )
 
-$hostsPath = "$env:SystemRoot\System32\drivers\etc\hosts"
+Write-Host "[INFO] Bloqueando sites de redes sociais via Windows Firewall..." -ForegroundColor Cyan
+Write-Host "[INFO] Regras serão aplicadas APENAS para o usuário: $targetUser" -ForegroundColor Cyan
+Write-Host ""
 
-Write-Host "[INFO] Bloqueando sites de redes sociais via hosts file..." -ForegroundColor Cyan
-Write-Host "[INFO] Arquivo: $hostsPath" -ForegroundColor Gray
-
-# Ler conteúdo atual
+# Verificar se o usuário existe
 try {
-    $hostsContent = Get-Content -Path $hostsPath -ErrorAction SilentlyContinue
-    if (-not $hostsContent) { $hostsContent = @() }
+    $userAccount = Get-LocalUser -Name $targetUser -ErrorAction Stop
+    $userSID = $userAccount.SID.Value
+    Write-Host "[OK] Usuário '$targetUser' encontrado (SID: $userSID)" -ForegroundColor Green
 } catch {
-    $hostsContent = @()
+    Write-Host "[ERRO] Usuário '$targetUser' não encontrado." -ForegroundColor Red
+    Write-Host "[DICA] Execute primeiro o script 03-create-user.ps1" -ForegroundColor Yellow
+    exit 1
 }
+
+# Criar SDDL para o usuário específico
+$userSDDL = "D:(A;;CC;;;$userSID)"
 
 $addedCount = 0
 $skippedCount = 0
 
-$linesToAdd = @()
-
-# Adicionar marcador se não existir
-$marker = "# === GIGA SETUP - SITES BLOQUEADOS ==="
-if ($hostsContent -notcontains $marker) {
-    $linesToAdd += ""
-    $linesToAdd += $marker
-}
-
 foreach ($site in $sitesToBlock) {
-    $blockLine = "127.0.0.1 $site"
+    $siteName = $site.Name
+    $ruleName = "$rulePrefix-$siteName"
     
-    if ($hostsContent -contains $blockLine) {
-        Write-Host "[OK] Site '$site' já está bloqueado." -ForegroundColor Green
+    # Verificar se a regra já existe
+    $existingRule = Get-NetFirewallRule -DisplayName $ruleName -ErrorAction SilentlyContinue
+    
+    if ($existingRule) {
+        Write-Host "[OK] Regra '$ruleName' já existe." -ForegroundColor Green
         $skippedCount++
     } else {
-        $linesToAdd += $blockLine
-        Write-Host "[+] Adicionando bloqueio: $site" -ForegroundColor Yellow
-        $addedCount++
+        try {
+            # Criar regra de bloqueio para o usuário específico
+            New-NetFirewallRule `
+                -DisplayName $ruleName `
+                -Description "Bloqueia acesso a $siteName para o usuário $targetUser (GIGA Setup)" `
+                -Direction Outbound `
+                -Action Block `
+                -Protocol TCP `
+                -RemotePort 80,443 `
+                -LocalUser $userSDDL `
+                -Program "Any" `
+                -Enabled True | Out-Null
+            
+            Write-Host "[+] Regra criada: $ruleName" -ForegroundColor Yellow
+            $addedCount++
+        } catch {
+            Write-Host "[ERRO] Falha ao criar regra '$ruleName': $_" -ForegroundColor Red
+        }
     }
 }
 
-if ($linesToAdd.Count -gt 0) {
-    try {
-        Add-Content -Path $hostsPath -Value $linesToAdd -Encoding ASCII
-        Write-Host ""
-        Write-Host "[SUCESSO] $addedCount site(s) bloqueado(s)." -ForegroundColor Green
-    } catch {
-        Write-Host "[ERRO] Falha ao modificar arquivo hosts: $_" -ForegroundColor Red
-        Write-Host "[DICA] Execute como Administrador." -ForegroundColor Yellow
-        exit 1
+# Adicionar bloqueio por DNS também (resolve os domínios para IPs)
+Write-Host ""
+Write-Host "[INFO] Criando regras adicionais de bloqueio por resolução DNS..." -ForegroundColor Cyan
+
+foreach ($site in $sitesToBlock) {
+    $siteName = $site.Name
+    
+    foreach ($domain in $site.Domains) {
+        # Pular wildcards para resolução DNS
+        if ($domain.StartsWith("*")) { continue }
+        
+        $dnsRuleName = "$rulePrefix-DNS-$siteName-$($domain -replace '\.', '_')"
+        
+        $existingDnsRule = Get-NetFirewallRule -DisplayName $dnsRuleName -ErrorAction SilentlyContinue
+        
+        if (-not $existingDnsRule) {
+            try {
+                # Resolver IPs do domínio
+                $ips = [System.Net.Dns]::GetHostAddresses($domain) | ForEach-Object { $_.IPAddressToString }
+                
+                if ($ips.Count -gt 0) {
+                    New-NetFirewallRule `
+                        -DisplayName $dnsRuleName `
+                        -Description "Bloqueia $domain para $targetUser" `
+                        -Direction Outbound `
+                        -Action Block `
+                        -RemoteAddress $ips `
+                        -LocalUser $userSDDL `
+                        -Enabled True | Out-Null
+                    
+                    Write-Host "[+] Bloqueado: $domain ($($ips.Count) IPs)" -ForegroundColor Yellow
+                    $addedCount++
+                }
+            } catch {
+                Write-Host "[AVISO] Não foi possível resolver: $domain" -ForegroundColor Gray
+            }
+        }
     }
-} else {
-    Write-Host ""
-    Write-Host "[OK] Todos os sites já estavam bloqueados." -ForegroundColor Green
 }
 
 Write-Host ""
-Write-Host "[RESUMO] Adicionados: $addedCount | Já existentes: $skippedCount" -ForegroundColor Cyan
-
-# Limpar cache DNS
-Write-Host ""
-Write-Host "[INFO] Limpando cache DNS..." -ForegroundColor Cyan
-try {
-    ipconfig /flushdns | Out-Null
-    Write-Host "[OK] Cache DNS limpo." -ForegroundColor Green
-} catch {
-    Write-Host "[AVISO] Não foi possível limpar o cache DNS." -ForegroundColor Yellow
-}
+Write-Host "============================================================" -ForegroundColor Cyan
+Write-Host "[RESUMO]" -ForegroundColor Cyan
+Write-Host "  Regras criadas: $addedCount" -ForegroundColor White
+Write-Host "  Regras existentes: $skippedCount" -ForegroundColor White
+Write-Host "  Usuário afetado: $targetUser" -ForegroundColor White
+Write-Host "  Administrador: NÃO afetado" -ForegroundColor Green
+Write-Host "============================================================" -ForegroundColor Cyan

@@ -111,6 +111,52 @@ try {
 }
 
 # ============================================================
+# 5. Bloquear Gerenciador de Tarefas
+# ============================================================
+Write-Host ""
+Write-Host "[5/7] Bloqueando Gerenciador de Tarefas..." -ForegroundColor Yellow
+
+try {
+    Ensure-RegistryPath $systemPolicyPath
+    Set-ItemProperty -Path $systemPolicyPath -Name "DisableTaskMgr" -Value 1 -Type DWord
+    Write-Host "[OK] Gerenciador de Tarefas bloqueado." -ForegroundColor Green
+} catch {
+    Write-Host "[ERRO] Falha ao bloquear Gerenciador de Tarefas: $_" -ForegroundColor Red
+}
+
+# ============================================================
+# 6. Bloquear Executar (Win+R)
+# ============================================================
+Write-Host ""
+Write-Host "[6/7] Bloqueando comando Executar..." -ForegroundColor Yellow
+
+try {
+    Ensure-RegistryPath $explorerPolicyPath
+    Set-ItemProperty -Path $explorerPolicyPath -Name "NoRun" -Value 1 -Type DWord
+    Write-Host "[OK] Comando Executar bloqueado." -ForegroundColor Green
+} catch {
+    Write-Host "[ERRO] Falha ao bloquear comando Executar: $_" -ForegroundColor Red
+}
+
+# ============================================================
+# 7. Ocultar Unidade C:
+# ============================================================
+Write-Host ""
+Write-Host "[7/7] Ocultando unidade C: do Explorer..." -ForegroundColor Yellow
+
+try {
+    Ensure-RegistryPath $explorerPolicyPath
+    # 4 = Restrict A & B only
+    # 8 = Restrict C only (Decimal value is 4, but let's double check bitmask)
+    # A=1, B=2, C=4, D=8... It's a bitmask.
+    # To hide C only, value is 4.
+    Set-ItemProperty -Path $explorerPolicyPath -Name "NoViewOnDrive" -Value 4 -Type DWord
+    Write-Host "[OK] Unidade C: ocultada." -ForegroundColor Green
+} catch {
+    Write-Host "[ERRO] Falha ao ocultar unidade C: $_" -ForegroundColor Red
+}
+
+# ============================================================
 # Resumo
 # ============================================================
 Write-Host ""
@@ -121,6 +167,9 @@ Write-Host "  - CMD (Prompt de Comando): Bloqueado" -ForegroundColor White
 Write-Host "  - PowerShell: Restrito via SRP" -ForegroundColor White
 Write-Host "  - Painel de Controle: Bloqueado" -ForegroundColor White
 Write-Host "  - Configurações: Bloqueadas" -ForegroundColor White
+Write-Host "  - Gerenciador de Tarefas: Bloqueado" -ForegroundColor White
+Write-Host "  - Comando Executar (Win+R): Bloqueado" -ForegroundColor White
+Write-Host "  - Unidade C: Oculta" -ForegroundColor White
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host ""
 Write-Host "[IMPORTANTE] Reinicie o computador para aplicar todas as alterações." -ForegroundColor Yellow

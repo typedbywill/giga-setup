@@ -20,11 +20,3 @@ if (-not $adminAccount) {
 }
 
 $accountName = $adminAccount.Name
-
-try {
-    Set-LocalUser -Name $accountName -Password $newPassword
-    Write-Host "[SUCESSO] Senha do '$accountName' foi definida." -ForegroundColor Green
-} catch {
-    Write-Host "[ERRO] Falha ao definir senha do '$accountName': $_" -ForegroundColor Red
-    exit 1
-}
