@@ -1,7 +1,7 @@
 # ============================================================
 # GIGA SETUP - Script Unificado
 # Gerado automaticamente via GitHub Actions
-# Data: 2026-01-15 17:58:21 UTC
+# Data: 2026-01-15 18:47:00 UTC
 # ============================================================
 
 # Requer execução como Administrador
@@ -74,15 +74,6 @@ if (-not $adminAccount) {
 }
 
 $accountName = $adminAccount.Name
-
-try {
-    Set-LocalUser -Name $accountName -Password $newPassword
-    Write-Host "[SUCESSO] Senha do '$accountName' foi definida." -ForegroundColor Green
-} catch {
-    Write-Host "[ERRO] Falha ao definir senha do '$accountName': $_" -ForegroundColor Red
-    exit 1
-}
-
 
 # ============================================================
 # 03-create-user.ps1
@@ -258,88 +249,119 @@ Write-Host '----------------------------------------' -ForegroundColor DarkGray
 Write-Host 'Executando: 07-block-social-sites.ps1' -ForegroundColor Yellow
 Write-Host '----------------------------------------' -ForegroundColor DarkGray
 
+$ErrorActionPreference = "Stop"
+
+$targetUser = "Usuário"
+$rulePrefix = "GIGA-Block"
 
 # Sites a bloquear (domínios principais)
 $sitesToBlock = @(
-    "whatsapp.com",
-    "www.whatsapp.com",
-    "web.whatsapp.com",
-    "api.whatsapp.com",
-    "facebook.com",
-    "www.facebook.com",
-    "m.facebook.com",
-    "static.facebook.com",
-    "instagram.com",
-    "www.instagram.com",
-    "i.instagram.com",
-    "static.instagram.com"
+    @{ Name = "WhatsApp"; Domains = @("whatsapp.com", "www.whatsapp.com", "web.whatsapp.com", "api.whatsapp.com", "whatsapp.net", "*.whatsapp.net") },
+    @{ Name = "Facebook"; Domains = @("facebook.com", "www.facebook.com", "m.facebook.com", "static.facebook.com", "*.facebook.com", "fbcdn.net", "*.fbcdn.net") },
+    @{ Name = "Instagram"; Domains = @("instagram.com", "www.instagram.com", "i.instagram.com", "static.instagram.com", "*.instagram.com", "*.cdninstagram.com") }
 )
 
-$hostsPath = "$env:SystemRoot\System32\drivers\etc\hosts"
+Write-Host "[INFO] Bloqueando sites de redes sociais via Windows Firewall..." -ForegroundColor Cyan
+Write-Host "[INFO] Regras serão aplicadas APENAS para o usuário: $targetUser" -ForegroundColor Cyan
+Write-Host ""
 
-Write-Host "[INFO] Bloqueando sites de redes sociais via hosts file..." -ForegroundColor Cyan
-Write-Host "[INFO] Arquivo: $hostsPath" -ForegroundColor Gray
-
-# Ler conteúdo atual
+# Verificar se o usuário existe
 try {
-    $hostsContent = Get-Content -Path $hostsPath -ErrorAction SilentlyContinue
-    if (-not $hostsContent) { $hostsContent = @() }
+    $userAccount = Get-LocalUser -Name $targetUser -ErrorAction Stop
+    $userSID = $userAccount.SID.Value
+    Write-Host "[OK] Usuário '$targetUser' encontrado (SID: $userSID)" -ForegroundColor Green
 } catch {
-    $hostsContent = @()
+    Write-Host "[ERRO] Usuário '$targetUser' não encontrado." -ForegroundColor Red
+    Write-Host "[DICA] Execute primeiro o script 03-create-user.ps1" -ForegroundColor Yellow
+    exit 1
 }
+
+# Criar SDDL para o usuário específico
+$userSDDL = "D:(A;;CC;;;$userSID)"
 
 $addedCount = 0
 $skippedCount = 0
 
-$linesToAdd = @()
-
-# Adicionar marcador se não existir
-$marker = "# === GIGA SETUP - SITES BLOQUEADOS ==="
-if ($hostsContent -notcontains $marker) {
-    $linesToAdd += ""
-    $linesToAdd += $marker
-}
-
 foreach ($site in $sitesToBlock) {
-    $blockLine = "127.0.0.1 $site"
+    $siteName = $site.Name
+    $ruleName = "$rulePrefix-$siteName"
     
-    if ($hostsContent -contains $blockLine) {
-        Write-Host "[OK] Site '$site' já está bloqueado." -ForegroundColor Green
+    # Verificar se a regra já existe
+    $existingRule = Get-NetFirewallRule -DisplayName $ruleName -ErrorAction SilentlyContinue
+    
+    if ($existingRule) {
+        Write-Host "[OK] Regra '$ruleName' já existe." -ForegroundColor Green
         $skippedCount++
     } else {
-        $linesToAdd += $blockLine
-        Write-Host "[+] Adicionando bloqueio: $site" -ForegroundColor Yellow
-        $addedCount++
+        try {
+            # Criar regra de bloqueio para o usuário específico
+            New-NetFirewallRule `
+                -DisplayName $ruleName `
+                -Description "Bloqueia acesso a $siteName para o usuário $targetUser (GIGA Setup)" `
+                -Direction Outbound `
+                -Action Block `
+                -Protocol TCP `
+                -RemotePort 80,443 `
+                -LocalUser $userSDDL `
+                -Program "Any" `
+                -Enabled True | Out-Null
+            
+            Write-Host "[+] Regra criada: $ruleName" -ForegroundColor Yellow
+            $addedCount++
+        } catch {
+            Write-Host "[ERRO] Falha ao criar regra '$ruleName': $_" -ForegroundColor Red
+        }
     }
 }
 
-if ($linesToAdd.Count -gt 0) {
-    try {
-        Add-Content -Path $hostsPath -Value $linesToAdd -Encoding ASCII
-        Write-Host ""
-        Write-Host "[SUCESSO] $addedCount site(s) bloqueado(s)." -ForegroundColor Green
-    } catch {
-        Write-Host "[ERRO] Falha ao modificar arquivo hosts: $_" -ForegroundColor Red
-        Write-Host "[DICA] Execute como Administrador." -ForegroundColor Yellow
-        exit 1
+# Adicionar bloqueio por DNS também (resolve os domínios para IPs)
+Write-Host ""
+Write-Host "[INFO] Criando regras adicionais de bloqueio por resolução DNS..." -ForegroundColor Cyan
+
+foreach ($site in $sitesToBlock) {
+    $siteName = $site.Name
+    
+    foreach ($domain in $site.Domains) {
+        # Pular wildcards para resolução DNS
+        if ($domain.StartsWith("*")) { continue }
+        
+        $dnsRuleName = "$rulePrefix-DNS-$siteName-$($domain -replace '\.', '_')"
+        
+        $existingDnsRule = Get-NetFirewallRule -DisplayName $dnsRuleName -ErrorAction SilentlyContinue
+        
+        if (-not $existingDnsRule) {
+            try {
+                # Resolver IPs do domínio
+                $ips = [System.Net.Dns]::GetHostAddresses($domain) | ForEach-Object { $_.IPAddressToString }
+                
+                if ($ips.Count -gt 0) {
+                    New-NetFirewallRule `
+                        -DisplayName $dnsRuleName `
+                        -Description "Bloqueia $domain para $targetUser" `
+                        -Direction Outbound `
+                        -Action Block `
+                        -RemoteAddress $ips `
+                        -LocalUser $userSDDL `
+                        -Enabled True | Out-Null
+                    
+                    Write-Host "[+] Bloqueado: $domain ($($ips.Count) IPs)" -ForegroundColor Yellow
+                    $addedCount++
+                }
+            } catch {
+                Write-Host "[AVISO] Não foi possível resolver: $domain" -ForegroundColor Gray
+            }
+        }
     }
-} else {
-    Write-Host ""
-    Write-Host "[OK] Todos os sites já estavam bloqueados." -ForegroundColor Green
 }
 
 Write-Host ""
-Write-Host "[RESUMO] Adicionados: $addedCount | Já existentes: $skippedCount" -ForegroundColor Cyan
-
-# Limpar cache DNS
-Write-Host ""
-Write-Host "[INFO] Limpando cache DNS..." -ForegroundColor Cyan
-try {
-    ipconfig /flushdns | Out-Null
-    Write-Host "[OK] Cache DNS limpo." -ForegroundColor Green
-} catch {
-    Write-Host "[AVISO] Não foi possível limpar o cache DNS." -ForegroundColor Yellow
-}
+Write-Host "============================================================" -ForegroundColor Cyan
+Write-Host "[RESUMO]" -ForegroundColor Cyan
+Write-Host "  Regras criadas: $addedCount" -ForegroundColor White
+Write-Host "  Regras existentes: $skippedCount" -ForegroundColor White
+Write-Host "  Usuário afetado: $targetUser" -ForegroundColor White
+Write-Host "  Administrador: NÃO afetado" -ForegroundColor Green
+Write-Host "============================================================" -ForegroundColor Cyan
 
 
 # ============================================================
@@ -456,6 +478,52 @@ try {
 }
 
 # ============================================================
+# 5. Bloquear Gerenciador de Tarefas
+# ============================================================
+Write-Host ""
+Write-Host "[5/7] Bloqueando Gerenciador de Tarefas..." -ForegroundColor Yellow
+
+try {
+    Ensure-RegistryPath $systemPolicyPath
+    Set-ItemProperty -Path $systemPolicyPath -Name "DisableTaskMgr" -Value 1 -Type DWord
+    Write-Host "[OK] Gerenciador de Tarefas bloqueado." -ForegroundColor Green
+} catch {
+    Write-Host "[ERRO] Falha ao bloquear Gerenciador de Tarefas: $_" -ForegroundColor Red
+}
+
+# ============================================================
+# 6. Bloquear Executar (Win+R)
+# ============================================================
+Write-Host ""
+Write-Host "[6/7] Bloqueando comando Executar..." -ForegroundColor Yellow
+
+try {
+    Ensure-RegistryPath $explorerPolicyPath
+    Set-ItemProperty -Path $explorerPolicyPath -Name "NoRun" -Value 1 -Type DWord
+    Write-Host "[OK] Comando Executar bloqueado." -ForegroundColor Green
+} catch {
+    Write-Host "[ERRO] Falha ao bloquear comando Executar: $_" -ForegroundColor Red
+}
+
+# ============================================================
+# 7. Ocultar Unidade C:
+# ============================================================
+Write-Host ""
+Write-Host "[7/7] Ocultando unidade C: do Explorer..." -ForegroundColor Yellow
+
+try {
+    Ensure-RegistryPath $explorerPolicyPath
+    # 4 = Restrict A & B only
+    # 8 = Restrict C only (Decimal value is 4, but let's double check bitmask)
+    # A=1, B=2, C=4, D=8... It's a bitmask.
+    # To hide C only, value is 4.
+    Set-ItemProperty -Path $explorerPolicyPath -Name "NoViewOnDrive" -Value 4 -Type DWord
+    Write-Host "[OK] Unidade C: ocultada." -ForegroundColor Green
+} catch {
+    Write-Host "[ERRO] Falha ao ocultar unidade C: $_" -ForegroundColor Red
+}
+
+# ============================================================
 # Resumo
 # ============================================================
 Write-Host ""
@@ -466,9 +534,315 @@ Write-Host "  - CMD (Prompt de Comando): Bloqueado" -ForegroundColor White
 Write-Host "  - PowerShell: Restrito via SRP" -ForegroundColor White
 Write-Host "  - Painel de Controle: Bloqueado" -ForegroundColor White
 Write-Host "  - Configurações: Bloqueadas" -ForegroundColor White
+Write-Host "  - Gerenciador de Tarefas: Bloqueado" -ForegroundColor White
+Write-Host "  - Comando Executar (Win+R): Bloqueado" -ForegroundColor White
+Write-Host "  - Unidade C: Oculta" -ForegroundColor White
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host ""
 Write-Host "[IMPORTANTE] Reinicie o computador para aplicar todas as alterações." -ForegroundColor Yellow
+
+
+# ============================================================
+# 09-install-programs.ps1
+# ============================================================
+
+Write-Host '----------------------------------------' -ForegroundColor DarkGray
+Write-Host 'Executando: 09-install-programs.ps1' -ForegroundColor Yellow
+Write-Host '----------------------------------------' -ForegroundColor DarkGray
+
+
+# Lista de programas para instalar (ID do winget)
+$programs = @(
+    "MicroSIP.MicroSIP",
+    "Google.Chrome"
+)
+
+# Verifica se o winget está disponível
+$wingetPath = Get-Command winget -ErrorAction SilentlyContinue
+if (-not $wingetPath) {
+    Write-Host "[ERRO] winget não encontrado no sistema." -ForegroundColor Red
+    exit 1
+}
+
+foreach ($programId in $programs) {
+    Write-Host "`n[INFO] Verificando '$programId'..." -ForegroundColor Cyan
+    
+    # Verifica se o programa já está instalado
+    $installed = winget list --id $programId --exact --accept-source-agreements 2>$null
+    
+    if ($installed -match $programId) {
+        Write-Host "[OK] '$programId' já está instalado." -ForegroundColor Green
+    } else {
+        try {
+            Write-Host "[INFO] Instalando '$programId' para todos os usuários..." -ForegroundColor Yellow
+            winget install -e --id $programId --scope machine --silent --accept-package-agreements --accept-source-agreements
+            
+            if ($LASTEXITCODE -eq 0) {
+                Write-Host "[SUCESSO] '$programId' foi instalado." -ForegroundColor Green
+            } else {
+                Write-Host "[AVISO] '$programId' retornou código $LASTEXITCODE. Pode já estar instalado ou requerer reinício." -ForegroundColor Yellow
+            }
+        } catch {
+            Write-Host "[ERRO] Falha ao instalar '$programId': $_" -ForegroundColor Red
+        }
+    }
+}
+
+Write-Host "`n[CONCLUÍDO] Verificação de programas finalizada." -ForegroundColor Cyan
+
+
+# ============================================================
+# 10-system-optimization.ps1
+# ============================================================
+
+Write-Host '----------------------------------------' -ForegroundColor DarkGray
+Write-Host 'Executando: 10-system-optimization.ps1' -ForegroundColor Yellow
+Write-Host '----------------------------------------' -ForegroundColor DarkGray
+
+
+Write-Host "========================================" -ForegroundColor Cyan
+Write-Host "     OTIMIZAÇÃO DE SISTEMA E DEBLOAT    " -ForegroundColor Cyan
+Write-Host "========================================" -ForegroundColor Cyan
+
+# ============================================================
+# 1. Configurar Plano de Energia para Alto Desempenho
+# ============================================================
+Write-Host ""
+Write-Host "[1/6] Configurando Plano de Energia..." -ForegroundColor Yellow
+
+try {
+    # Definir High Performance
+    # GUID do High Performance: 8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c
+    powercfg -setactive 8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c
+    
+    # Desativar suspensão e hibernação (alimentação CA/tomada)
+    powercfg -change -monitor-timeout-ac 0
+    powercfg -change -disk-timeout-ac 0
+    powercfg -change -standby-timeout-ac 0
+    powercfg -change -hibernate-timeout-ac 0
+    
+    Write-Host "[OK] Plano de Energia definido para Alto Desempenho (Sem suspensão)." -ForegroundColor Green
+} catch {
+    Write-Host "[ERRO] Falha ao configurar energia: $_" -ForegroundColor Red
+}
+
+# ============================================================
+# 2. Desativar Telemetria e Coleta de Dados
+# ============================================================
+Write-Host ""
+Write-Host "[2/6] Desativando Telemetria..." -ForegroundColor Yellow
+
+$telemetryKeys = @(
+    "HKLM:\SOFTWARE\Policies\Microsoft\Windows\DataCollection",
+    "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\DataCollection"
+)
+
+foreach ($key in $telemetryKeys) {
+    if (-not (Test-Path $key)) { New-Item -Path $key -Force | Out-Null }
+    try {
+        Set-ItemProperty -Path $key -Name "AllowTelemetry" -Value 0 -Type DWord -ErrorAction SilentlyContinue
+    } catch {
+        Write-Host "[AVISO] Não foi possível definir AllowTelemetry em $key" -ForegroundColor Gray
+    }
+}
+Write-Host "[OK] Telemetria minimizada." -ForegroundColor Green
+
+# ============================================================
+# 3. Definir Fuso Horário (Brasília)
+# ============================================================
+Write-Host ""
+Write-Host "[3/6] Configurando Fuso Horário..." -ForegroundColor Yellow
+
+try {
+    $timezone = "E. South America Standard Time" # UTC-03:00 Brasília
+    Set-TimeZone -Id $timezone
+    Write-Host "[OK] Fuso horário definido para: $timezone" -ForegroundColor Green
+} catch {
+    Write-Host "[ERRO] Falha ao definir fuso horário: $_" -ForegroundColor Red
+}
+
+# ============================================================
+# 4. Habilitar Remote Desktop (RDP)
+# ============================================================
+Write-Host ""
+Write-Host "[4/6] Habilitando Área de Trabalho Remota (RDP)..." -ForegroundColor Yellow
+
+try {
+    $rdpPath = "HKLM:\System\CurrentControlSet\Control\Terminal Server"
+    if (-not (Test-Path $rdpPath)) { New-Item -Path $rdpPath -Force | Out-Null }
+    
+    Set-ItemProperty -Path $rdpPath -Name "fDenyTSConnections" -Value 0 -Type DWord
+    Enable-NetFirewallRule -DisplayGroup "Remote Desktop" -ErrorAction SilentlyContinue
+    
+    Write-Host "[OK] RDP habilitado." -ForegroundColor Green
+} catch {
+    Write-Host "[ERRO] Falha ao habilitar RDP: $_" -ForegroundColor Red
+}
+
+# ============================================================
+# 5. Desativar Reinicializações Automáticas do Windows Update
+# ============================================================
+Write-Host ""
+Write-Host "[5/6] Impedindo reinicialização automática do Windows Update durante logon..." -ForegroundColor Yellow
+
+$auPath = "HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU"
+if (-not (Test-Path $auPath)) { New-Item -Path $auPath -Force | Out-Null }
+
+try {
+    # NoAutoRebootWithLoggedOnUsers = 1
+    Set-ItemProperty -Path $auPath -Name "NoAutoRebootWithLoggedOnUsers" -Value 1 -Type DWord
+    Write-Host "[OK] Reinicialização automática com usuário logado desativada." -ForegroundColor Green
+} catch {
+    Write-Host "[ERRO] Falha ao configurar Windows Update: $_" -ForegroundColor Red
+}
+
+# ============================================================
+# 6. Remover Bloatware (Apps Inúteis)
+# ============================================================
+Write-Host ""
+Write-Host "[6/6] Removendo bloatware (Xbox, Solitaire, Weather, News)..." -ForegroundColor Yellow
+
+$bloatwarePattern = "Microsoft.Xbox|Microsoft.Solitaire|Microsoft.BingWeather|Microsoft.WindowsCamera|Microsoft.GetHelp|Microsoft.Getstarted|Microsoft.MicrosoftOfficeHub|Microsoft.SkypeApp|Microsoft.ZuneVideo|Microsoft.ZuneMusic|Microsoft.People|Microsoft.WindowsAlarms|Microsoft.WindowsMaps|Microsoft.BingNews"
+
+try {
+    # Remove para o usuário atual e provisionado para novos usuários
+    $packages = Get-AppxPackage | Where-Object { $_.Name -match $bloatwarePattern }
+    
+    if ($packages) {
+        foreach ($pkg in $packages) {
+            Write-Host "  - Removendo $($pkg.Name)..." -ForegroundColor Gray
+            Remove-AppxPackage -Package $pkg.PackageFullName -ErrorAction SilentlyContinue
+        }
+        
+        # Tentar remover pacotes provisionados (system-wide) requer admin
+        $provisioned = Get-AppxProvisionedPackage -Online | Where-Object { $_.DisplayName -match $bloatwarePattern }
+        foreach ($pkg in $provisioned) {
+             # Remove-AppxProvisionedPackage é mais demorado e sensível, vamos apenas tentar silenciosamente
+             Remove-AppxProvisionedPackage -Online -PackageName $pkg.PackageName -ErrorAction SilentlyContinue | Out-Null
+        }
+
+        Write-Host "[OK] Limpeza de bloatware concluída." -ForegroundColor Green
+    } else {
+        Write-Host "[INFO] Nenhum bloatware encontrado ou já removido." -ForegroundColor Green
+    }
+
+} catch {
+    Write-Host "[AVISO] Falha parcial na remoção de apps: $_" -ForegroundColor Yellow
+}
+
+Write-Host ""
+Write-Host "========================================" -ForegroundColor Cyan
+Write-Host "        OTIMIZAÇÃO CONCLUÍDA           " -ForegroundColor Cyan
+Write-Host "========================================" -ForegroundColor Cyan
+
+
+# ============================================================
+# 11-ui-customization.ps1
+# ============================================================
+
+Write-Host '----------------------------------------' -ForegroundColor DarkGray
+Write-Host 'Executando: 11-ui-customization.ps1' -ForegroundColor Yellow
+Write-Host '----------------------------------------' -ForegroundColor DarkGray
+
+$userName = "Usuario"
+
+Write-Host "========================================" -ForegroundColor Cyan
+Write-Host "         CUSTOMIZAÇÃO DE UI             " -ForegroundColor Cyan
+Write-Host "========================================" -ForegroundColor Cyan
+
+# 1. Verificar e Carregar o Hive do Usuário
+$userSID = (Get-LocalUser -Name $userName -ErrorAction SilentlyContinue).SID.Value
+if (-not $userSID) {
+    Write-Host "[ERRO] Usuário '$userName' não encontrado." -ForegroundColor Red
+    exit 1
+}
+
+$userHivePath = "Registry::HKEY_USERS\$userSID"
+if (-not (Test-Path $userHivePath)) {
+    Write-Host "[AVISO] Perfil do usuário '$userName' não está carregado. Não é possível aplicar certas customizações de UI sem o usuário estar logado ao menos uma vez ou via RegLoad." -ForegroundColor Yellow
+    # Em um cenário real de automação, poderíamos usar "reg load" aqui se tivéssemos o caminho do NTUSER.DAT,
+    # mas por simplicidade e segurança, vamos focar em políticas que funcionam.
+    
+    # Vamos usar as chaves de Policy em HKLM que afetam todos os usuários ou tentar injetar se a hive estiver montada.
+    Write-Host "Tentando aplicar via Políticas Globais (HKLM) que afetam UI..." -ForegroundColor Yellow
+}
+
+# ============================================================
+# 2. Ocultar Ícones da Área de Trabalho (NoDesktop)
+# ============================================================
+Write-Host ""
+Write-Host "[1/3] Configurando Área de Trabalho Limpa..." -ForegroundColor Yellow
+
+# Chave Global para Policies de Explorer
+$explorerPolicy = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\Explorer"
+if (-not (Test-Path $explorerPolicy)) { New-Item -Path $explorerPolicy -Force | Out-Null }
+
+try {
+    # NoDesktop = 1 (Esconde ícones e desabilita clique direito no desktop)
+    Set-ItemProperty -Path $explorerPolicy -Name "NoDesktop" -Value 1 -Type DWord
+    Write-Host "[OK] Ícones da Área de Trabalho ocultos (Policy Global)." -ForegroundColor Green
+} catch {
+    Write-Host "[ERRO] Falha ao configurar NoDesktop: $_" -ForegroundColor Red
+}
+
+# ============================================================
+# 3. Papel de Parede Cor Sólida (Neutro)
+# ============================================================
+Write-Host ""
+Write-Host "[2/3] Definindo Papel de Parede Sólido..." -ForegroundColor Yellow
+
+# Infelizmente, mudar o wallpaper via script para outro usuário sem ele estar logado é complexo.
+# A melhor forma é via chave de registro "Wallpaper" string vazia e "Background" cor RGB.
+# Vamos tentar acessar a Hive do usuário se estiver carregada.
+
+if (Test-Path $userHivePath) {
+    try {
+        $desktopKey = "$userHivePath\Control Panel\Desktop"
+        if (-not (Test-Path $desktopKey)) { New-Item -Path $desktopKey -Force | Out-Null }
+        
+        # Remover Wallpaper (String vazia)
+        Set-ItemProperty -Path $desktopKey -Name "Wallpaper" -Value "" -Type String
+        
+        # Definir cor de fundo sólida em RGB (Ex: 0 0 0 para Preto, 0 120 215 para Azul Padrão)
+        $colorsKey = "$userHivePath\Control Panel\Colors"
+        Set-ItemProperty -Path $colorsKey -Name "Background" -Value "0 0 0" -Type String
+        
+        Write-Host "[OK] Wallpaper removido e cor de fundo definida." -ForegroundColor Green
+    } catch {
+        Write-Host "[AVISO] Não foi possível acessar as chaves de Desktop do usuário: $_" -ForegroundColor Yellow
+    }
+} else {
+    Write-Host "[INFO] Hive do usuário não carregada. Pulei configuração de Wallpaper." -ForegroundColor Gray
+}
+
+# ============================================================
+# 4. Limpeza Visual Adicional (Explorer)
+# ============================================================
+Write-Host ""
+Write-Host "[3/3] Aplicando ajustes visuais do Explorer..." -ForegroundColor Yellow
+
+try {
+    # Esconder Ícone de "Pessoas" na barra de tarefas (Global)
+    $policyPeople = "HKLM:\SOFTWARE\Policies\Microsoft\Windows\Explorer"
+    if (-not (Test-Path $policyPeople)) { New-Item -Path $policyPeople -Force | Out-Null }
+    
+    Set-ItemProperty -Path $policyPeople -Name "HidePeopleBar" -Value 1 -Type DWord
+    
+    # Desativar "Notícias e Interesses" (News and Interests) - Requer chave específica que varia por versão,
+    # mas o "EnableFeeds" em Policies geralmente funciona para bloquear.
+    $policyFeeds = "HKLM:\SOFTWARE\Policies\Microsoft\Windows\Windows Feeds"
+    if (-not (Test-Path $policyFeeds)) { New-Item -Path $policyFeeds -Force | Out-Null }
+    Set-ItemProperty -Path $policyFeeds -Name "EnableFeeds" -Value 0 -Type DWord
+
+    Write-Host "[OK] Barra de tarefas limpa (Pessoas, Notícias)." -ForegroundColor Green
+} catch {
+    Write-Host "[ERRO] Falha ao configurar Explorer: $_" -ForegroundColor Red
+}
+
+Write-Host ""
+Write-Host "========================================" -ForegroundColor Cyan
+Write-Host "        CUSTOMIZAÇÃO CONCLUÍDA          " -ForegroundColor Cyan
+Write-Host "========================================" -ForegroundColor Cyan
 
 
 Write-Host ""
