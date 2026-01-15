@@ -1,0 +1,24 @@
+# Executar como Administrador
+
+# Descobre o SID do Administrador interno (termina em -500)
+$AdminSID = (Get-LocalUser | Where-Object { $_.SID -like "*-500" }).SID.Value
+
+if (-not $AdminSID) {
+    Write-Error "Administrador interno não encontrado."
+    exit
+}
+
+$ExplorerPath = "Registry::HKEY_USERS\$AdminSID\Software\Microsoft\Windows\CurrentVersion\Policies\Explorer"
+
+if (Test-Path $ExplorerPath) {
+    if (Get-ItemProperty -Path $ExplorerPath -Name "NoControlPanel" -ErrorAction SilentlyContinue) {
+        Remove-ItemProperty -Path $ExplorerPath -Name "NoControlPanel"
+        Write-Host "Liberado Painel de Controle para o Administrador interno."
+    }
+    else {
+        Write-Host "OK: Administrador já está liberado."
+    }
+}
+else {
+    Write-Host "OK: Nenhuma política encontrada para o Administrador."
+}
