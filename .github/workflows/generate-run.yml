@@ -1,0 +1,72 @@
+name: Generate run.ps1
+
+on:
+  push:
+    paths:
+      - 'commands/**'
+  workflow_dispatch:
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Generate run.ps1
+        run: |
+          echo "# ============================================================" > run.ps1
+          echo "# GIGA SETUP - Script Unificado" >> run.ps1
+          echo "# Gerado automaticamente via GitHub Actions" >> run.ps1
+          echo "# Data: $(date -u +'%Y-%m-%d %H:%M:%S UTC')" >> run.ps1
+          echo "# ============================================================" >> run.ps1
+          echo "" >> run.ps1
+          echo '# Requer execução como Administrador' >> run.ps1
+          echo '#Requires -RunAsAdministrator' >> run.ps1
+          echo "" >> run.ps1
+          echo '$ErrorActionPreference = "Continue"' >> run.ps1
+          echo "" >> run.ps1
+          echo 'Write-Host ""' >> run.ps1
+          echo 'Write-Host "========================================" -ForegroundColor Cyan' >> run.ps1
+          echo 'Write-Host "    GIGA SETUP - Configuração Windows   " -ForegroundColor Cyan' >> run.ps1
+          echo 'Write-Host "========================================" -ForegroundColor Cyan' >> run.ps1
+          echo 'Write-Host ""' >> run.ps1
+          echo "" >> run.ps1
+          
+          # Concatenar todos os scripts em ordem
+          for script in $(ls -1 commands/*.ps1 | sort); do
+            scriptName=$(basename "$script")
+            echo "" >> run.ps1
+            echo "# ============================================================" >> run.ps1
+            echo "# $scriptName" >> run.ps1
+            echo "# ============================================================" >> run.ps1
+            echo "" >> run.ps1
+            echo "Write-Host '----------------------------------------' -ForegroundColor DarkGray" >> run.ps1
+            echo "Write-Host 'Executando: $scriptName' -ForegroundColor Yellow" >> run.ps1
+            echo "Write-Host '----------------------------------------' -ForegroundColor DarkGray" >> run.ps1
+            echo "" >> run.ps1
+            # Pular cabeçalho do script (linhas que começam com #) e linha vazia inicial
+            tail -n +8 "$script" >> run.ps1
+            echo "" >> run.ps1
+          done
+          
+          # Adicionar resumo final
+          echo "" >> run.ps1
+          echo 'Write-Host ""' >> run.ps1
+          echo 'Write-Host "========================================" -ForegroundColor Cyan' >> run.ps1
+          echo 'Write-Host "        CONFIGURAÇÃO CONCLUÍDA          " -ForegroundColor Cyan' >> run.ps1
+          echo 'Write-Host "========================================" -ForegroundColor Cyan' >> run.ps1
+          echo 'Write-Host ""' >> run.ps1
+          echo 'Write-Host "[IMPORTANTE] Reinicie o computador para aplicar todas as alterações." -ForegroundColor Yellow' >> run.ps1
+          
+          echo "✅ run.ps1 gerado com sucesso!"
+          wc -l run.ps1
+      
+      - name: Commit and push
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          git add run.ps1
+          git diff --quiet --cached || git commit -m "🤖 Auto-generate run.ps1"
+          git push

@@ -1,0 +1,30 @@
+# ============================================================
+# Script: 02-set-admin-password.ps1
+# Descrição: Define a senha do Administrador para TIGig@net2026
+# Idempotente: Sempre redefine a senha
+# ============================================================
+
+$ErrorActionPreference = "Stop"
+
+$newPassword = ConvertTo-SecureString "TIGig@net2026" -AsPlainText -Force
+
+$adminAccount = Get-LocalUser -Name "Administrator" -ErrorAction SilentlyContinue
+
+if (-not $adminAccount) {
+    $adminAccount = Get-LocalUser -Name "Administrador" -ErrorAction SilentlyContinue
+}
+
+if (-not $adminAccount) {
+    Write-Host "[ERRO] Conta de Administrador não encontrada no sistema." -ForegroundColor Red
+    exit 1
+}
+
+$accountName = $adminAccount.Name
+
+try {
+    Set-LocalUser -Name $accountName -Password $newPassword
+    Write-Host "[SUCESSO] Senha do '$accountName' foi definida." -ForegroundColor Green
+} catch {
+    Write-Host "[ERRO] Falha ao definir senha do '$accountName': $_" -ForegroundColor Red
+    exit 1
+}
