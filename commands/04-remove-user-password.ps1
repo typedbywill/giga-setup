@@ -12,7 +12,7 @@ $existingUser = Get-LocalUser -Name $userName -ErrorAction SilentlyContinue
 
 if (-not $existingUser) {
     Write-Host "[AVISO] Usuário '$userName' não existe. Execute 03-create-user.ps1 primeiro." -ForegroundColor Yellow
-    exit 0
+    return
 }
 
 try {
@@ -21,5 +21,5 @@ try {
     Write-Host "[SUCESSO] Senha do usuário '$userName' foi removida." -ForegroundColor Green
 } catch {
     Write-Host "[ERRO] Falha ao remover senha do '$userName': $_" -ForegroundColor Red
-    exit 1
+    return
 }

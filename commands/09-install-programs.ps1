@@ -16,7 +16,7 @@ $programs = @(
 $wingetPath = Get-Command winget -ErrorAction SilentlyContinue
 if (-not $wingetPath) {
     Write-Host "[ERRO] winget não encontrado no sistema." -ForegroundColor Red
-    exit 1
+    return
 }
 
 foreach ($programId in $programs) {

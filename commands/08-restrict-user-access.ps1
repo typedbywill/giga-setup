@@ -14,7 +14,7 @@ Write-Host "[INFO] Aplicando restrições para o usuário '$userName'..." -Foreg
 $userExists = Get-LocalUser -Name $userName -ErrorAction SilentlyContinue
 if (-not $userExists) {
     Write-Host "[ERRO] Usuário '$userName' não existe. Execute 03-create-user.ps1 primeiro." -ForegroundColor Red
-    exit 1
+    return
 }
 
 # Obter SID do usuário

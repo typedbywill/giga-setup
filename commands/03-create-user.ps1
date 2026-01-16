@@ -26,6 +26,6 @@ if ($existingUser) {
         Write-Host "[INFO] Usuário '$userName' adicionado ao grupo de usuários." -ForegroundColor Cyan
     } catch {
         Write-Host "[ERRO] Falha ao criar usuário '$userName': $_" -ForegroundColor Red
-        exit 1
+        return
     }
 }

@@ -14,7 +14,7 @@ if (-not $adminAccount) {
 
 if (-not $adminAccount) {
     Write-Host "[ERRO] Conta de Administrador não encontrada no sistema." -ForegroundColor Red
-    exit 1
+        return
 }
 
 $accountName = $adminAccount.Name
@@ -27,6 +27,6 @@ if ($adminAccount.Enabled) {
         Write-Host "[SUCESSO] Conta '$accountName' foi ativada." -ForegroundColor Green
     } catch {
         Write-Host "[ERRO] Falha ao ativar conta '$accountName': $_" -ForegroundColor Red
-        exit 1
+            return
     }
 }

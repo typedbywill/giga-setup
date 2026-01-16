@@ -29,7 +29,7 @@ try {
 } catch {
     Write-Host "[ERRO] Usuário '$targetUser' não encontrado." -ForegroundColor Red
     Write-Host "[DICA] Execute primeiro o script 03-create-user.ps1" -ForegroundColor Yellow
-    exit 1
+    return
 }
 
 # Criar SDDL para o usuário específico

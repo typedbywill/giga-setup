@@ -15,7 +15,7 @@ Write-Host "========================================" -ForegroundColor Cyan
 $userSID = (Get-LocalUser -Name $userName -ErrorAction SilentlyContinue).SID.Value
 if (-not $userSID) {
     Write-Host "[ERRO] Usuário '$userName' não encontrado." -ForegroundColor Red
-    exit 1
+    return
 }
 
 $userHivePath = "Registry::HKEY_USERS\$userSID"

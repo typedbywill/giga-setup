@@ -16,7 +16,7 @@ if (-not $adminAccount) {
 
 if (-not $adminAccount) {
     Write-Host "[ERRO] Conta de Administrador não encontrada no sistema." -ForegroundColor Red
-    exit 1
+    return
 }
 
 $accountName = $adminAccount.Name

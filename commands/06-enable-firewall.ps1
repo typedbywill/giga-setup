@@ -36,7 +36,7 @@ if (-not $allEnabled) {
         Write-Host "[SUCESSO] Windows Firewall ativado em todos os perfis." -ForegroundColor Green
     } catch {
         Write-Host "[ERRO] Falha ao ativar Firewall: $_" -ForegroundColor Red
-        exit 1
+        return
     }
 } else {
     Write-Host ""

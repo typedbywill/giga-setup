@@ -30,7 +30,7 @@ $usersToRemove = $allUsers | Where-Object {
 
 if ($usersToRemove.Count -eq 0) {
     Write-Host "[OK] Nenhum usuário extra encontrado para remover." -ForegroundColor Green
-    exit 0
+    return
 }
 
 Write-Host "[INFO] Usuários que serão removidos:" -ForegroundColor Yellow
