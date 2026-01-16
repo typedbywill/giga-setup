@@ -1,12 +1,12 @@
 # ============================================================
 # Script: 02-set-admin-password.ps1
-# Descrição: Define a senha do Administrador para TIGig@net2026
+# Descrição: Define a senha do Administrador para Micros@Giga
 # Idempotente: Sempre redefine a senha
 # ============================================================
 
 $ErrorActionPreference = "Stop"
 
-$newPassword = ConvertTo-SecureString "TIGig@net2026" -AsPlainText -Force
+$newPassword = ConvertTo-SecureString "Micros@Giga2026!" -AsPlainText -Force
 
 $adminAccount = Get-LocalUser -Name "Administrator" -ErrorAction SilentlyContinue
 

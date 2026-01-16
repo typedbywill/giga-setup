@@ -49,8 +49,10 @@ jobs:
             echo "Write-Host 'Executando: $scriptName' -ForegroundColor Yellow" >> run.ps1
             echo "Write-Host '----------------------------------------' -ForegroundColor DarkGray" >> run.ps1
             echo "" >> run.ps1
+            echo "& {" >> run.ps1
             # Pular cabeçalho do script (linhas que começam com #) e linha vazia inicial
             tail -n +8 "$script" >> run.ps1
+            echo "}" >> run.ps1
             echo "" >> run.ps1
           done
           
