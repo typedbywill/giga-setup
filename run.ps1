@@ -1,7 +1,7 @@
 # ============================================================
 # GIGA SETUP - Script Unificado
 # Gerado automaticamente via GitHub Actions
-# Data: 2026-01-15 18:47:00 UTC
+# Data: 2026-01-16 13:33:55 UTC
 # ============================================================
 
 # Requer execução como Administrador
@@ -24,6 +24,7 @@ Write-Host '----------------------------------------' -ForegroundColor DarkGray
 Write-Host 'Executando: 01-enable-admin.ps1' -ForegroundColor Yellow
 Write-Host '----------------------------------------' -ForegroundColor DarkGray
 
+& {
 
 $adminAccount = Get-LocalUser -Name "Administrator" -ErrorAction SilentlyContinue
 
@@ -33,7 +34,7 @@ if (-not $adminAccount) {
 
 if (-not $adminAccount) {
     Write-Host "[ERRO] Conta de Administrador não encontrada no sistema." -ForegroundColor Red
-    exit 1
+        return
 }
 
 $accountName = $adminAccount.Name
@@ -46,8 +47,9 @@ if ($adminAccount.Enabled) {
         Write-Host "[SUCESSO] Conta '$accountName' foi ativada." -ForegroundColor Green
     } catch {
         Write-Host "[ERRO] Falha ao ativar conta '$accountName': $_" -ForegroundColor Red
-        exit 1
+            return
     }
+}
 }
 
 
@@ -59,8 +61,9 @@ Write-Host '----------------------------------------' -ForegroundColor DarkGray
 Write-Host 'Executando: 02-set-admin-password.ps1' -ForegroundColor Yellow
 Write-Host '----------------------------------------' -ForegroundColor DarkGray
 
+& {
 
-$newPassword = ConvertTo-SecureString "TIGig@net2026" -AsPlainText -Force
+$newPassword = ConvertTo-SecureString "Micros@Giga2026!" -AsPlainText -Force
 
 $adminAccount = Get-LocalUser -Name "Administrator" -ErrorAction SilentlyContinue
 
@@ -70,10 +73,11 @@ if (-not $adminAccount) {
 
 if (-not $adminAccount) {
     Write-Host "[ERRO] Conta de Administrador não encontrada no sistema." -ForegroundColor Red
-    exit 1
+    return
 }
 
-$accountName = $adminAccount.Name
+$accountName = $adminAccount.Name}
+
 
 # ============================================================
 # 03-create-user.ps1
@@ -83,6 +87,7 @@ Write-Host '----------------------------------------' -ForegroundColor DarkGray
 Write-Host 'Executando: 03-create-user.ps1' -ForegroundColor Yellow
 Write-Host '----------------------------------------' -ForegroundColor DarkGray
 
+& {
 
 $userName = "Usuario"
 $userFullName = "Usuário"
@@ -104,8 +109,9 @@ if ($existingUser) {
         Write-Host "[INFO] Usuário '$userName' adicionado ao grupo de usuários." -ForegroundColor Cyan
     } catch {
         Write-Host "[ERRO] Falha ao criar usuário '$userName': $_" -ForegroundColor Red
-        exit 1
+        return
     }
+}
 }
 
 
@@ -117,6 +123,7 @@ Write-Host '----------------------------------------' -ForegroundColor DarkGray
 Write-Host 'Executando: 04-remove-user-password.ps1' -ForegroundColor Yellow
 Write-Host '----------------------------------------' -ForegroundColor DarkGray
 
+& {
 
 $userName = "Usuario"
 
@@ -124,7 +131,7 @@ $existingUser = Get-LocalUser -Name $userName -ErrorAction SilentlyContinue
 
 if (-not $existingUser) {
     Write-Host "[AVISO] Usuário '$userName' não existe. Execute 03-create-user.ps1 primeiro." -ForegroundColor Yellow
-    exit 0
+    return
 }
 
 try {
@@ -133,7 +140,8 @@ try {
     Write-Host "[SUCESSO] Senha do usuário '$userName' foi removida." -ForegroundColor Green
 } catch {
     Write-Host "[ERRO] Falha ao remover senha do '$userName': $_" -ForegroundColor Red
-    exit 1
+    return
+}
 }
 
 
@@ -145,6 +153,7 @@ Write-Host '----------------------------------------' -ForegroundColor DarkGray
 Write-Host 'Executando: 05-remove-other-users.ps1' -ForegroundColor Yellow
 Write-Host '----------------------------------------' -ForegroundColor DarkGray
 
+& {
 
 # Usuários que devem ser mantidos (nomes em inglês e português)
 $keepUsers = @(
@@ -170,7 +179,7 @@ $usersToRemove = $allUsers | Where-Object {
 
 if ($usersToRemove.Count -eq 0) {
     Write-Host "[OK] Nenhum usuário extra encontrado para remover." -ForegroundColor Green
-    exit 0
+    return
 }
 
 Write-Host "[INFO] Usuários que serão removidos:" -ForegroundColor Yellow
@@ -192,6 +201,7 @@ foreach ($user in $usersToRemove) {
 
 Write-Host ""
 Write-Host "[RESUMO] Removidos: $removedCount | Falhas: $failedCount" -ForegroundColor Cyan
+}
 
 
 # ============================================================
@@ -202,6 +212,7 @@ Write-Host '----------------------------------------' -ForegroundColor DarkGray
 Write-Host 'Executando: 06-enable-firewall.ps1' -ForegroundColor Yellow
 Write-Host '----------------------------------------' -ForegroundColor DarkGray
 
+& {
 
 $profiles = @("Domain", "Private", "Public")
 
@@ -233,11 +244,12 @@ if (-not $allEnabled) {
         Write-Host "[SUCESSO] Windows Firewall ativado em todos os perfis." -ForegroundColor Green
     } catch {
         Write-Host "[ERRO] Falha ao ativar Firewall: $_" -ForegroundColor Red
-        exit 1
+        return
     }
 } else {
     Write-Host ""
     Write-Host "[OK] Firewall já está ativo em todos os perfis." -ForegroundColor Green
+}
 }
 
 
@@ -249,6 +261,7 @@ Write-Host '----------------------------------------' -ForegroundColor DarkGray
 Write-Host 'Executando: 07-block-social-sites.ps1' -ForegroundColor Yellow
 Write-Host '----------------------------------------' -ForegroundColor DarkGray
 
+& {
 $ErrorActionPreference = "Stop"
 
 $targetUser = "Usuário"
@@ -273,7 +286,7 @@ try {
 } catch {
     Write-Host "[ERRO] Usuário '$targetUser' não encontrado." -ForegroundColor Red
     Write-Host "[DICA] Execute primeiro o script 03-create-user.ps1" -ForegroundColor Yellow
-    exit 1
+    return
 }
 
 # Criar SDDL para o usuário específico
@@ -362,6 +375,7 @@ Write-Host "  Regras existentes: $skippedCount" -ForegroundColor White
 Write-Host "  Usuário afetado: $targetUser" -ForegroundColor White
 Write-Host "  Administrador: NÃO afetado" -ForegroundColor Green
 Write-Host "============================================================" -ForegroundColor Cyan
+}
 
 
 # ============================================================
@@ -372,6 +386,7 @@ Write-Host '----------------------------------------' -ForegroundColor DarkGray
 Write-Host 'Executando: 08-restrict-user-access.ps1' -ForegroundColor Yellow
 Write-Host '----------------------------------------' -ForegroundColor DarkGray
 
+& {
 
 $userName = "Usuario"
 
@@ -381,7 +396,7 @@ Write-Host "[INFO] Aplicando restrições para o usuário '$userName'..." -Foreg
 $userExists = Get-LocalUser -Name $userName -ErrorAction SilentlyContinue
 if (-not $userExists) {
     Write-Host "[ERRO] Usuário '$userName' não existe. Execute 03-create-user.ps1 primeiro." -ForegroundColor Red
-    exit 1
+    return
 }
 
 # Obter SID do usuário
@@ -540,6 +555,7 @@ Write-Host "  - Unidade C: Oculta" -ForegroundColor White
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host ""
 Write-Host "[IMPORTANTE] Reinicie o computador para aplicar todas as alterações." -ForegroundColor Yellow
+}
 
 
 # ============================================================
@@ -550,6 +566,7 @@ Write-Host '----------------------------------------' -ForegroundColor DarkGray
 Write-Host 'Executando: 09-install-programs.ps1' -ForegroundColor Yellow
 Write-Host '----------------------------------------' -ForegroundColor DarkGray
 
+& {
 
 # Lista de programas para instalar (ID do winget)
 $programs = @(
@@ -561,7 +578,7 @@ $programs = @(
 $wingetPath = Get-Command winget -ErrorAction SilentlyContinue
 if (-not $wingetPath) {
     Write-Host "[ERRO] winget não encontrado no sistema." -ForegroundColor Red
-    exit 1
+    return
 }
 
 foreach ($programId in $programs) {
@@ -589,6 +606,7 @@ foreach ($programId in $programs) {
 }
 
 Write-Host "`n[CONCLUÍDO] Verificação de programas finalizada." -ForegroundColor Cyan
+}
 
 
 # ============================================================
@@ -599,6 +617,7 @@ Write-Host '----------------------------------------' -ForegroundColor DarkGray
 Write-Host 'Executando: 10-system-optimization.ps1' -ForegroundColor Yellow
 Write-Host '----------------------------------------' -ForegroundColor DarkGray
 
+& {
 
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host "     OTIMIZAÇÃO DE SISTEMA E DEBLOAT    " -ForegroundColor Cyan
@@ -734,6 +753,7 @@ Write-Host ""
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host "        OTIMIZAÇÃO CONCLUÍDA           " -ForegroundColor Cyan
 Write-Host "========================================" -ForegroundColor Cyan
+}
 
 
 # ============================================================
@@ -744,6 +764,7 @@ Write-Host '----------------------------------------' -ForegroundColor DarkGray
 Write-Host 'Executando: 11-ui-customization.ps1' -ForegroundColor Yellow
 Write-Host '----------------------------------------' -ForegroundColor DarkGray
 
+& {
 $userName = "Usuario"
 
 Write-Host "========================================" -ForegroundColor Cyan
@@ -754,7 +775,7 @@ Write-Host "========================================" -ForegroundColor Cyan
 $userSID = (Get-LocalUser -Name $userName -ErrorAction SilentlyContinue).SID.Value
 if (-not $userSID) {
     Write-Host "[ERRO] Usuário '$userName' não encontrado." -ForegroundColor Red
-    exit 1
+    return
 }
 
 $userHivePath = "Registry::HKEY_USERS\$userSID"
@@ -843,6 +864,7 @@ Write-Host ""
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host "        CUSTOMIZAÇÃO CONCLUÍDA          " -ForegroundColor Cyan
 Write-Host "========================================" -ForegroundColor Cyan
+}
 
 
 Write-Host ""
