@@ -7,6 +7,7 @@ Bootstrap e desired state Windows para endpoints GigaNet gerenciados pelo [Actio
 | Arquivo | Função |
 |---------|--------|
 | [`agent/install-agent.ps1`](agent/install-agent.ps1) | Instala o agente Action1 (GigaNet), de forma silenciosa e idempotente |
+| [`action1-invoke-run.ps1`](action1-invoke-run.ps1) | Script para colar/agendar no Action1: baixa e executa o `run.ps1` do GitHub |
 | [`run.ps1`](run.ps1) | Desired state idempotente: admin local, OpenSSH, firewall TCP 22 |
 
 ## 1. Instalar o agente Action1
@@ -45,15 +46,19 @@ Logs usam `[OK]`, `[CHANGED]`, `[FAIL]` e `[INFO]`.
 
 O schedule fica no console Action1 (fonte da verdade). Não há Task Scheduler local criado por estes scripts.
 
+Use [`action1-invoke-run.ps1`](action1-invoke-run.ps1): ele baixa sempre a versão atual de
+[`run.ps1`](https://raw.githubusercontent.com/typedbywill/giga-setup/main/run.ps1)
+e executa (já elevated no Action1).
+
 Passos sugeridos:
 
-1. No Action1, abra **Automate** → **Scripts** (ou equivalente de automation)
-2. Crie um script com o conteúdo de `run.ps1` (cole o arquivo ou faça download de um raw URL do repositório, se hospedado)
+1. No Action1, abra **Automate** → **Scripts**
+2. Cole o conteúdo de `action1-invoke-run.ps1`
 3. Agende a execução periódica nos endpoints do grupo GigaNet
 4. Frequência sugerida: **a cada 1–6 horas**
 5. Execute como **SYSTEM** / elevated
 
-Após a instalação do agente, o Action1 passa a chamar `run.ps1` no intervalo definido e reconverge o estado se alguém alterar admin, SSH ou firewall.
+Assim, alterações no `run.ps1` no GitHub passam a valer no próximo ciclo, sem republicar o script no Action1.
 
 ## Segurança
 
